@@ -91,7 +91,7 @@ const Auth = () => {
             <Brain className="w-7 h-7 text-white" />
           </div>
           <span className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            PoisePro AI
+            SkillMantra
           </span>
         </Link>
 
