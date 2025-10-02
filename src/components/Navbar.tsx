@@ -11,7 +11,7 @@ export const Navbar = () => {
             <Brain className="w-6 h-6 text-white" />
           </div>
           <span className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-            PoisePro AI
+            SkillMantra
           </span>
         </Link>
 

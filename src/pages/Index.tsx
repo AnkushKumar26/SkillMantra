@@ -138,7 +138,7 @@ const Index = () => {
             <div>
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-accent/10 border border-accent/20 mb-6">
                 <Target className="w-4 h-4 text-accent" />
-                <span className="text-sm font-medium text-accent">Why Choose PoisePro AI</span>
+                <span className="text-sm font-medium text-accent">Why Choose SkillMantra</span>
               </div>
               
               <h2 className="text-3xl md:text-4xl font-bold mb-6">
@@ -232,7 +232,7 @@ const Index = () => {
       {/* Footer */}
       <footer className="border-t border-border py-8 px-4">
         <div className="container mx-auto text-center text-muted-foreground">
-          <p>© 2025 PoisePro AI. All rights reserved.</p>
+          <p>© 2025 SkillMantra. All rights reserved.</p>
         </div>
       </footer>
     </div>

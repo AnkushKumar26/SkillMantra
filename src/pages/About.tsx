@@ -50,7 +50,7 @@ const About = () => {
           <h1 className="text-5xl font-bold mb-6">
             About{" "}
             <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              PoisePro AI
+              SkillMantra
             </span>
           </h1>
           <p className="text-xl text-muted-foreground">
@@ -65,13 +65,13 @@ const About = () => {
             <CardContent className="p-8">
               <h2 className="text-3xl font-bold mb-4">Our Mission</h2>
               <p className="text-lg text-muted-foreground mb-6">
-                At PoisePro AI, we believe that soft skills are the foundation of professional success. 
+                At SkillMantra, we believe that soft skills are the foundation of professional success.
                 Our mission is to democratize access to high-quality soft skills training by combining 
                 artificial intelligence with proven coaching methodologies.
               </p>
               <p className="text-lg text-muted-foreground">
                 Whether you're preparing for an interview, improving your presentation skills, or 
-                enhancing your written communication, PoisePro AI provides the tools and feedback 
+                enhancing your written communication, SkillMantra provides the tools and feedback 
                 you need to excel.
               </p>
             </CardContent>
@@ -82,7 +82,7 @@ const About = () => {
       <section className="py-16 px-4 bg-muted/30">
         <div className="container mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Why Choose PoisePro AI?</h2>
+            <h2 className="text-3xl font-bold mb-4">Why Choose SkillMantra?</h2>
             <p className="text-muted-foreground text-lg">
               Built on pillars of innovation, expertise, and user-focused design
             </p>
@@ -135,7 +135,7 @@ const About = () => {
 
       <footer className="border-t border-border py-8 px-4">
         <div className="container mx-auto text-center text-muted-foreground">
-          <p>© 2025 PoisePro AI. All rights reserved.</p>
+          <p>© 2025 SkillMantra. All rights reserved.</p>
         </div>
       </footer>
     </div>
