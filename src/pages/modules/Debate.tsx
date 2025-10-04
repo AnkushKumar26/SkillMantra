@@ -1,49 +1,110 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, MessageSquare, Send } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, MessageSquare, Trophy } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { VoiceDebate } from "@/components/VoiceDebate";
+import { supabase } from "@/integrations/supabase/client";
 
 const Debate = () => {
-  const [messages, setMessages] = useState<Array<{ role: string; content: string }>>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const [selectedTopic, setSelectedTopic] = useState("");
+  const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">("beginner");
+  const [debateStarted, setDebateStarted] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const topics = [
     "Technology improves quality of life",
     "Remote work is more productive",
     "AI will replace human jobs",
-    "Social media does more harm than good"
+    "Social media does more harm than good",
+    "Climate change requires immediate action",
+    "Free speech should have limits"
   ];
 
-  const startDebate = (topic: string) => {
-    setMessages([
-      {
-        role: "system",
-        content: `Let's debate: "${topic}". I'll take the opposing view. Present your opening argument!`
+  const startDebate = async () => {
+    if (!selectedTopic) {
+      toast.error("Please select a topic");
+      return;
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Please login to start a debate");
+        navigate("/auth");
+        return;
       }
-    ]);
+
+      const { data, error } = await supabase
+        .from("debate_sessions")
+        .insert({
+          user_id: user.id,
+          topic: selectedTopic,
+          difficulty,
+          transcript: []
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setSessionId(data.id);
+      setDebateStarted(true);
+      toast.success("Debate started! Click 'Start Speaking' to begin.");
+    } catch (error) {
+      console.error("Error starting debate:", error);
+      toast.error("Failed to start debate");
+    }
   };
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
+  const handleDebateComplete = async (analytics: any) => {
+    if (!sessionId) return;
 
-    const userMessage = { role: "user", content: input };
-    setMessages([...messages, userMessage]);
-    setInput("");
-    setLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponse = {
-        role: "assistant",
-        content: "That's an interesting point! However, consider this counter-argument... [AI integration coming soon]"
-      };
-      setMessages(prev => [...prev, aiResponse]);
-      setLoading(false);
-    }, 1000);
+      // Update session
+      await supabase
+        .from("debate_sessions")
+        .update({
+          duration_seconds: analytics.duration,
+          completed_at: new Date().toISOString()
+        })
+        .eq("id", sessionId);
+
+      // Save analytics
+      await supabase
+        .from("debate_analytics")
+        .insert({
+          session_id: sessionId,
+          user_id: user.id,
+          clarity_score: analytics.clarity,
+          argument_strength: analytics.argument_strength,
+          confidence_score: analytics.confidence,
+          filler_words_count: analytics.filler_words,
+          speaking_pace: "moderate",
+          feedback_summary: `Great debate! Your clarity was ${analytics.clarity}%, argument strength ${analytics.argument_strength}%, and confidence ${analytics.confidence}%.`,
+          suggestions: {
+            tips: [
+              "Practice reducing filler words",
+              "Structure arguments with clear premises",
+              "Use confident tone and pacing"
+            ]
+          }
+        });
+
+      toast.success("Debate completed! Analytics saved.");
+      setDebateStarted(false);
+      setSelectedTopic("");
+      setSessionId(null);
+    } catch (error) {
+      console.error("Error saving analytics:", error);
+      toast.error("Failed to save analytics");
+    }
   };
 
   return (
@@ -61,25 +122,54 @@ const Debate = () => {
       </nav>
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
-        {messages.length === 0 ? (
+        {!debateStarted ? (
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Choose a Debate Topic</CardTitle>
-                <CardDescription>Select a topic to start practicing your debate skills</CardDescription>
+                <CardTitle className="flex items-center gap-2">
+                  <Trophy className="w-6 h-6 text-primary" />
+                  AI Voice Debate Challenge
+                </CardTitle>
+                <CardDescription>Choose a topic and difficulty level to start your voice debate</CardDescription>
               </CardHeader>
-              <CardContent className="grid md:grid-cols-2 gap-4">
-                {topics.map((topic, index) => (
-                  <Card 
-                    key={index}
-                    className="cursor-pointer hover:shadow-lg transition-shadow border-primary/20"
-                    onClick={() => startDebate(topic)}
-                  >
-                    <CardContent className="p-4">
-                      <p className="font-medium">{topic}</p>
-                    </CardContent>
-                  </Card>
-                ))}
+              <CardContent className="space-y-6">
+                <div className="space-y-3">
+                  <label className="text-sm font-medium">Select Topic</label>
+                  <Select value={selectedTopic} onValueChange={setSelectedTopic}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a debate topic" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {topics.map((topic) => (
+                        <SelectItem key={topic} value={topic}>
+                          {topic}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-sm font-medium">Difficulty Level</label>
+                  <Select value={difficulty} onValueChange={(value: any) => setDifficulty(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="beginner">Beginner - Simple arguments</SelectItem>
+                      <SelectItem value="intermediate">Intermediate - Structured debate</SelectItem>
+                      <SelectItem value="advanced">Advanced - Expert level</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button 
+                  onClick={startDebate} 
+                  disabled={!selectedTopic}
+                  className="w-full bg-gradient-to-r from-primary to-accent"
+                >
+                  Start Voice Debate
+                </Button>
               </CardContent>
             </Card>
 
@@ -88,67 +178,20 @@ const Debate = () => {
                 <CardTitle className="text-accent">How It Works</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <p>• Choose a debate topic from the options above</p>
-                <p>• Present your arguments clearly and logically</p>
-                <p>• The AI will challenge your points and provide counter-arguments</p>
-                <p>• Receive feedback on your argumentation skills</p>
+                <p>🎤 Speak your arguments using your microphone</p>
+                <p>🤖 AI opponent responds with voice + text</p>
+                <p>📊 Get real-time performance analytics</p>
+                <p>💡 Receive feedback on clarity, strength & confidence</p>
+                <p>⏱️ Timed rounds for structured practice</p>
               </CardContent>
             </Card>
           </div>
         ) : (
-          <div className="space-y-4">
-            <Card>
-              <CardContent className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
-                {messages.map((msg, index) => (
-                  <div
-                    key={index}
-                    className={`p-4 rounded-lg ${
-                      msg.role === "user"
-                        ? "bg-primary text-primary-foreground ml-12"
-                        : msg.role === "system"
-                        ? "bg-accent/10 border border-accent/20"
-                        : "bg-muted mr-12"
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                  </div>
-                ))}
-                {loading && (
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce" />
-                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce delay-100" />
-                    <div className="w-2 h-2 bg-primary rounded-full animate-bounce delay-200" />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex gap-3">
-                  <Textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder="Type your argument..."
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                    rows={3}
-                  />
-                  <Button
-                    onClick={handleSend}
-                    disabled={loading || !input.trim()}
-                    className="bg-gradient-to-r from-primary to-accent"
-                  >
-                    <Send className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+          <VoiceDebate 
+            topic={selectedTopic}
+            difficulty={difficulty}
+            onComplete={handleDebateComplete}
+          />
         )}
       </main>
     </div>

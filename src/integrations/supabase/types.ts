@@ -14,6 +14,89 @@ export type Database = {
   }
   public: {
     Tables: {
+      debate_analytics: {
+        Row: {
+          argument_strength: number | null
+          clarity_score: number | null
+          confidence_score: number | null
+          created_at: string
+          feedback_summary: string | null
+          filler_words_count: number | null
+          id: string
+          session_id: string
+          speaking_pace: string | null
+          suggestions: Json | null
+          user_id: string
+        }
+        Insert: {
+          argument_strength?: number | null
+          clarity_score?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          feedback_summary?: string | null
+          filler_words_count?: number | null
+          id?: string
+          session_id: string
+          speaking_pace?: string | null
+          suggestions?: Json | null
+          user_id: string
+        }
+        Update: {
+          argument_strength?: number | null
+          clarity_score?: number | null
+          confidence_score?: number | null
+          created_at?: string
+          feedback_summary?: string | null
+          filler_words_count?: number | null
+          id?: string
+          session_id?: string
+          speaking_pace?: string | null
+          suggestions?: Json | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "debate_analytics_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "debate_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      debate_sessions: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          difficulty: string
+          duration_seconds: number | null
+          id: string
+          topic: string
+          transcript: Json | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          difficulty: string
+          duration_seconds?: number | null
+          id?: string
+          topic: string
+          transcript?: Json | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          difficulty?: string
+          duration_seconds?: number | null
+          id?: string
+          topic?: string
+          transcript?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
