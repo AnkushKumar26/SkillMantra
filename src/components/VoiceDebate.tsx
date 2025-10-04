@@ -1,14 +1,14 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Mic, MicOff, Volume2, Loader2 } from "lucide-react";
+import { Mic, MicOff, Volume2, VolumeX, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { SpeechRecognitionService, TextToSpeechService } from "@/utils/speechRecognition";
 
 interface Message {
   role: "user" | "assistant" | "system";
   content: string;
-  audio?: string;
 }
 
 interface VoiceDebateProps {
@@ -21,143 +21,134 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "system",
-      content: `Debate Topic: "${topic}". Difficulty: ${difficulty}. Present your opening argument!`
+      content: `Debate Topic: "${topic}". Difficulty: ${difficulty}. Press the microphone button and present your opening argument!`
     }
   ]);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [currentTranscript, setCurrentTranscript] = useState("");
   const [timer, setTimer] = useState(0);
   const [analytics, setAnalytics] = useState({
     clarity: 0,
     argument_strength: 0,
     confidence: 0,
-    filler_words: 0
+    filler_words: 0,
+    turnCount: 0
   });
 
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const speechRecognitionRef = useRef<SpeechRecognitionService | null>(null);
+  const ttsRef = useRef<TextToSpeechService | null>(null);
   const timerRef = useRef<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (isRecording && !timerRef.current) {
-      timerRef.current = window.setInterval(() => {
-        setTimer(prev => prev + 1);
-      }, 1000);
-    } else if (!isRecording && timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+    // Initialize TTS
+    ttsRef.current = new TextToSpeechService();
+
+    // Start timer
+    timerRef.current = window.setInterval(() => {
+      setTimer(prev => prev + 1);
+    }, 1000);
 
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      speechRecognitionRef.current?.stop();
+      ttsRef.current?.stop();
     };
-  }, [isRecording]);
+  }, []);
 
-  const startRecording = async () => {
+  const startListening = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        await processAudio(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      toast.success("Recording started");
-    } catch (error) {
-      console.error("Error accessing microphone:", error);
-      toast.error("Could not access microphone");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const processAudio = async (audioBlob: Blob) => {
-    setIsProcessing(true);
-    try {
-      // Convert audio to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(audioBlob);
-      reader.onloadend = async () => {
-        const base64Audio = (reader.result as string).split(',')[1];
-
-        // Speech to text
-        const { data: sttData, error: sttError } = await supabase.functions.invoke('speech-to-text', {
-          body: { audio: base64Audio }
-        });
-
-        if (sttError) throw sttError;
-
-        const userText = sttData.text;
-        setTranscript(userText);
-        
-        const userMessage: Message = { role: "user", content: userText };
-        setMessages(prev => [...prev, userMessage]);
-
-        // Get AI response
-        const { data: aiData, error: aiError } = await supabase.functions.invoke('debate-ai', {
-          body: {
-            messages: [...messages, userMessage],
-            difficulty,
-            topic
+      if (!speechRecognitionRef.current) {
+        speechRecognitionRef.current = new SpeechRecognitionService(
+          (transcript) => {
+            setCurrentTranscript(transcript);
+            handleUserSpeech(transcript);
+            setIsListening(false);
+          },
+          (error) => {
+            console.error("Speech recognition error:", error);
+            toast.error("Could not recognize speech. Please try again.");
+            setIsListening(false);
           }
-        });
+        );
+      }
 
-        if (aiError) throw aiError;
+      // Stop any ongoing AI speech
+      ttsRef.current?.stop();
+      setIsSpeaking(false);
 
-        const aiMessage: Message = { role: "assistant", content: aiData.response };
-        
-        // Update analytics
-        setAnalytics(prev => ({
-          clarity: Math.round((prev.clarity + aiData.analysis.clarity) / 2),
-          argument_strength: Math.round((prev.argument_strength + aiData.analysis.argument_strength) / 2),
-          confidence: Math.round((prev.confidence + aiData.analysis.confidence) / 2),
-          filler_words: prev.filler_words + aiData.analysis.filler_words
-        }));
-
-        // Text to speech for AI response
-        const { data: ttsData, error: ttsError } = await supabase.functions.invoke('text-to-speech', {
-          body: { text: aiData.response }
-        });
-
-        if (!ttsError && ttsData?.audioContent) {
-          aiMessage.audio = ttsData.audioContent;
-          playAudio(ttsData.audioContent);
-        }
-
-        setMessages(prev => [...prev, aiMessage]);
-        setTranscript("");
-      };
+      speechRecognitionRef.current.start();
+      setIsListening(true);
+      setCurrentTranscript("");
+      toast.success("Listening... Speak your argument");
     } catch (error) {
-      console.error("Error processing audio:", error);
-      toast.error("Error processing audio");
+      console.error("Error starting speech recognition:", error);
+      toast.error("Speech recognition not supported in this browser");
+    }
+  };
+
+  const stopListening = () => {
+    speechRecognitionRef.current?.stop();
+    setIsListening(false);
+  };
+
+  const handleUserSpeech = async (transcript: string) => {
+    if (!transcript.trim()) return;
+
+    setIsProcessing(true);
+    const userMessage: Message = { role: "user", content: transcript };
+    setMessages(prev => [...prev, userMessage]);
+
+    try {
+      // Get AI response
+      const { data, error } = await supabase.functions.invoke('debate-ai', {
+        body: {
+          messages: [...messages, userMessage],
+          difficulty,
+          topic
+        }
+      });
+
+      if (error) throw error;
+
+      const aiResponse = data.response;
+      const analysisData = data.analysis;
+
+      // Update analytics
+      const newTurnCount = analytics.turnCount + 1;
+      setAnalytics({
+        clarity: Math.round((analytics.clarity * analytics.turnCount + analysisData.clarity) / newTurnCount),
+        argument_strength: Math.round((analytics.argument_strength * analytics.turnCount + analysisData.argument_strength) / newTurnCount),
+        confidence: Math.round((analytics.confidence * analytics.turnCount + analysisData.confidence) / newTurnCount),
+        filler_words: analytics.filler_words + (analysisData.filler_words || 0),
+        turnCount: newTurnCount
+      });
+
+      const aiMessage: Message = { role: "assistant", content: aiResponse };
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Speak AI response
+      setIsSpeaking(true);
+      ttsRef.current?.speak(aiResponse, () => {
+        setIsSpeaking(false);
+      });
+
+      toast.success("AI response ready");
+    } catch (error) {
+      console.error("Error getting AI response:", error);
+      toast.error("Failed to get AI response. Please try again.");
     } finally {
       setIsProcessing(false);
+      setCurrentTranscript("");
     }
   };
 
-  const playAudio = (base64Audio: string) => {
-    const audio = new Audio(`data:audio/mp3;base64,${base64Audio}`);
-    audioRef.current = audio;
-    audio.play().catch(err => console.error("Error playing audio:", err));
+  const stopSpeaking = () => {
+    ttsRef.current?.stop();
+    setIsSpeaking(false);
   };
 
   const formatTime = (seconds: number) => {
@@ -167,6 +158,8 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
   };
 
   const endDebate = () => {
+    speechRecognitionRef.current?.stop();
+    ttsRef.current?.stop();
     onComplete({
       ...analytics,
       duration: timer,
@@ -177,57 +170,91 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
 
   return (
     <div className="space-y-4">
-      <Card className="border-primary/20">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <div className="text-lg font-semibold">Timer: {formatTime(timer)}</div>
-            <div className="text-sm text-muted-foreground capitalize">Difficulty: {difficulty}</div>
+      <Card className="border-primary/20 bg-gradient-to-br from-background to-primary/5">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-2xl font-bold text-primary">⏱️ {formatTime(timer)}</div>
+            <div className="text-sm font-medium px-3 py-1 bg-accent/20 rounded-full capitalize">
+              {difficulty}
+            </div>
           </div>
           
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-primary">{analytics.clarity}%</div>
-              <div className="text-xs text-muted-foreground">Clarity</div>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="text-center p-4 bg-background rounded-lg border border-primary/20">
+              <div className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+                {analytics.clarity}%
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">Clarity</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-accent">{analytics.argument_strength}%</div>
-              <div className="text-xs text-muted-foreground">Strength</div>
+            <div className="text-center p-4 bg-background rounded-lg border border-accent/20">
+              <div className="text-3xl font-bold bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
+                {analytics.argument_strength}%
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">Strength</div>
             </div>
-            <div className="text-center">
-              <div className="text-2xl font-bold text-secondary">{analytics.confidence}%</div>
-              <div className="text-xs text-muted-foreground">Confidence</div>
+            <div className="text-center p-4 bg-background rounded-lg border border-secondary/20">
+              <div className="text-3xl font-bold bg-gradient-to-r from-secondary to-primary bg-clip-text text-transparent">
+                {analytics.confidence}%
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">Confidence</div>
             </div>
           </div>
 
-          <div className="flex gap-3 justify-center">
-            {!isRecording ? (
+          <div className="flex gap-3 justify-center items-center">
+            {!isListening && !isProcessing ? (
               <Button
-                onClick={startRecording}
-                disabled={isProcessing}
-                className="bg-gradient-to-r from-primary to-accent"
+                onClick={startListening}
+                disabled={isSpeaking}
+                size="lg"
+                className="bg-gradient-to-r from-primary to-accent hover:shadow-lg transition-all"
               >
-                <Mic className="w-4 h-4 mr-2" />
+                <Mic className="w-5 h-5 mr-2" />
                 Start Speaking
               </Button>
-            ) : (
+            ) : isListening ? (
               <Button
-                onClick={stopRecording}
+                onClick={stopListening}
+                size="lg"
                 variant="destructive"
                 className="animate-pulse"
               >
-                <MicOff className="w-4 h-4 mr-2" />
+                <MicOff className="w-5 h-5 mr-2" />
                 Stop Recording
               </Button>
+            ) : (
+              <Button disabled size="lg" variant="secondary">
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Processing...
+              </Button>
             )}
-            <Button onClick={endDebate} variant="outline">
+
+            {isSpeaking && (
+              <Button
+                onClick={stopSpeaking}
+                size="lg"
+                variant="outline"
+              >
+                <VolumeX className="w-5 h-5 mr-2" />
+                Stop AI Speech
+              </Button>
+            )}
+
+            <Button onClick={endDebate} size="lg" variant="outline">
               End Debate
             </Button>
           </div>
 
-          {transcript && (
-            <div className="mt-4 p-3 bg-muted rounded-lg">
-              <div className="text-sm font-medium mb-1">Live Transcript:</div>
-              <div className="text-sm">{transcript}</div>
+          {currentTranscript && (
+            <div className="mt-4 p-4 bg-primary/10 rounded-lg border border-primary/30 animate-fade-in">
+              <div className="text-sm font-semibold mb-2 text-primary">🎤 Live Transcript:</div>
+              <div className="text-sm">{currentTranscript}</div>
+            </div>
+          )}
+
+          {isSpeaking && (
+            <div className="mt-4 p-4 bg-accent/10 rounded-lg border border-accent/30 animate-fade-in flex items-center gap-3">
+              <Volume2 className="w-5 h-5 text-accent animate-pulse" />
+              <div className="text-sm font-semibold text-accent">AI is speaking...</div>
             </div>
           )}
         </CardContent>
@@ -238,35 +265,21 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
           {messages.map((msg, index) => (
             <div
               key={index}
-              className={`p-4 rounded-lg ${
+              className={`p-4 rounded-lg transition-all ${
                 msg.role === "user"
-                  ? "bg-primary text-primary-foreground ml-12"
+                  ? "bg-gradient-to-r from-primary to-primary/80 text-primary-foreground ml-12 shadow-lg"
                   : msg.role === "system"
-                  ? "bg-accent/10 border border-accent/20"
-                  : "bg-muted mr-12"
+                  ? "bg-accent/10 border border-accent/20 text-center"
+                  : "bg-gradient-to-r from-muted to-muted/80 mr-12 shadow-md"
               }`}
             >
-              <div className="flex items-start justify-between">
-                <p className="whitespace-pre-wrap flex-1">{msg.content}</p>
-                {msg.audio && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => playAudio(msg.audio!)}
-                    className="ml-2"
-                  >
-                    <Volume2 className="w-4 h-4" />
-                  </Button>
-                )}
+              <div className="flex items-start justify-between gap-3">
+                {msg.role === "user" && <Mic className="w-4 h-4 mt-1 flex-shrink-0" />}
+                {msg.role === "assistant" && <Volume2 className="w-4 h-4 mt-1 flex-shrink-0" />}
+                <p className="whitespace-pre-wrap flex-1 text-sm leading-relaxed">{msg.content}</p>
               </div>
             </div>
           ))}
-          {isProcessing && (
-            <div className="flex items-center gap-2 text-muted-foreground justify-center">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <span>Processing...</span>
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>
