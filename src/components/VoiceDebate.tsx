@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Mic, MicOff, Volume2, VolumeX, Loader2 } from "lucide-react";
+import { Mic, MicOff, VolumeX, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { SpeechRecognitionService, TextToSpeechService } from "@/utils/speechRecognition";
+import { RobotAvatar } from "@/components/RobotAvatar";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -28,6 +29,7 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [currentTranscript, setCurrentTranscript] = useState("");
+  const [currentAiResponse, setCurrentAiResponse] = useState("");
   const [timer, setTimer] = useState(0);
   const [analytics, setAnalytics] = useState({
     clarity: 0,
@@ -131,9 +133,11 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
       setMessages(prev => [...prev, aiMessage]);
 
       // Speak AI response
+      setCurrentAiResponse(aiResponse);
       setIsSpeaking(true);
       ttsRef.current?.speak(aiResponse, () => {
         setIsSpeaking(false);
+        setCurrentAiResponse("");
       });
 
       toast.success("AI response ready");
@@ -149,6 +153,7 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
   const stopSpeaking = () => {
     ttsRef.current?.stop();
     setIsSpeaking(false);
+    setCurrentAiResponse("");
   };
 
   const formatTime = (seconds: number) => {
@@ -166,6 +171,13 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
       topic,
       difficulty
     });
+  };
+
+  const getRobotState = () => {
+    if (isProcessing) return "thinking";
+    if (isListening) return "listening";
+    if (isSpeaking) return "speaking";
+    return "idle";
   };
 
   return (
@@ -244,42 +256,22 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
             </Button>
           </div>
 
-          {currentTranscript && (
+          {currentTranscript && isListening && (
             <div className="mt-4 p-4 bg-primary/10 rounded-lg border border-primary/30 animate-fade-in">
-              <div className="text-sm font-semibold mb-2 text-primary">🎤 Live Transcript:</div>
+              <div className="text-sm font-semibold mb-2 text-primary">🎤 You are saying:</div>
               <div className="text-sm">{currentTranscript}</div>
-            </div>
-          )}
-
-          {isSpeaking && (
-            <div className="mt-4 p-4 bg-accent/10 rounded-lg border border-accent/30 animate-fade-in flex items-center gap-3">
-              <Volume2 className="w-5 h-5 text-accent animate-pulse" />
-              <div className="text-sm font-semibold text-accent">AI is speaking...</div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardContent className="p-6 space-y-4 max-h-[400px] overflow-y-auto">
-          {messages.map((msg, index) => (
-            <div
-              key={index}
-              className={`p-4 rounded-lg transition-all ${
-                msg.role === "user"
-                  ? "bg-gradient-to-r from-primary to-primary/80 text-primary-foreground ml-12 shadow-lg"
-                  : msg.role === "system"
-                  ? "bg-accent/10 border border-accent/20 text-center"
-                  : "bg-gradient-to-r from-muted to-muted/80 mr-12 shadow-md"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                {msg.role === "user" && <Mic className="w-4 h-4 mt-1 flex-shrink-0" />}
-                {msg.role === "assistant" && <Volume2 className="w-4 h-4 mt-1 flex-shrink-0" />}
-                <p className="whitespace-pre-wrap flex-1 text-sm leading-relaxed">{msg.content}</p>
-              </div>
-            </div>
-          ))}
+      {/* Robot Avatar */}
+      <Card className="border-accent/20">
+        <CardContent className="p-6">
+          <RobotAvatar 
+            state={getRobotState()} 
+            currentText={isSpeaking ? currentAiResponse : undefined}
+          />
         </CardContent>
       </Card>
     </div>
