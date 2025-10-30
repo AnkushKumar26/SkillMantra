@@ -59,55 +59,71 @@ export class SpeechRecognitionService {
 }
 
 export class TextToSpeechService {
-  private synth: SpeechSynthesis;
-  private voices: SpeechSynthesisVoice[] = [];
+  private audioContext: AudioContext | null = null;
+  private currentSource: AudioBufferSourceNode | null = null;
 
   constructor() {
-    this.synth = window.speechSynthesis;
-    this.loadVoices();
+    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
   }
 
-  private loadVoices() {
-    this.voices = this.synth.getVoices();
-    
-    if (this.voices.length === 0) {
-      this.synth.onvoiceschanged = () => {
-        this.voices = this.synth.getVoices();
+  async speak(text: string, onEnd?: () => void) {
+    try {
+      // Cancel any ongoing speech
+      this.stop();
+
+      // Call ElevenLabs edge function
+      const response = await fetch(
+        'https://cbgzhtushdvfkiarmgek.supabase.co/functions/v1/elevenlabs-tts',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to generate speech');
+      }
+
+      const { audioContent } = await response.json();
+
+      // Decode base64 audio
+      const audioData = Uint8Array.from(atob(audioContent), c => c.charCodeAt(0));
+      const audioBuffer = await this.audioContext!.decodeAudioData(audioData.buffer);
+
+      // Play audio
+      const source = this.audioContext!.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(this.audioContext!.destination);
+      
+      source.onended = () => {
+        this.currentSource = null;
+        if (onEnd) onEnd();
       };
+
+      this.currentSource = source;
+      source.start(0);
+    } catch (error) {
+      console.error('Text-to-speech error:', error);
+      if (onEnd) onEnd();
     }
-  }
-
-  speak(text: string, onEnd?: () => void) {
-    // Cancel any ongoing speech
-    this.synth.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Try to use a good English voice
-    const englishVoice = this.voices.find(voice => 
-      voice.lang.startsWith('en') && voice.name.includes('Google')
-    ) || this.voices.find(voice => voice.lang.startsWith('en'));
-
-    if (englishVoice) {
-      utterance.voice = englishVoice;
-    }
-
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-
-    if (onEnd) {
-      utterance.onend = onEnd;
-    }
-
-    this.synth.speak(utterance);
   }
 
   stop() {
-    this.synth.cancel();
+    if (this.currentSource) {
+      try {
+        this.currentSource.stop();
+        this.currentSource.disconnect();
+      } catch (e) {
+        // Ignore errors when stopping
+      }
+      this.currentSource = null;
+    }
   }
 
   isSpeaking() {
-    return this.synth.speaking;
+    return this.currentSource !== null;
   }
 }
