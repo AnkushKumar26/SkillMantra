@@ -12,10 +12,10 @@ serve(async (req) => {
 
   try {
     const { messages, difficulty, topic } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     // Set system prompt based on difficulty
@@ -27,18 +27,31 @@ serve(async (req) => {
 
     const systemPrompt = systemPrompts[difficulty as keyof typeof systemPrompts] || systemPrompts.beginner;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    // Convert messages to Gemini format
+    const geminiContents = messages.map((msg: any) => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }]
+    }));
+
+    // Add system instruction as first user message
+    geminiContents.unshift({
+      role: "user",
+      parts: [{ text: systemPrompt }]
+    });
+
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
+        contents: geminiContents,
+        generationConfig: {
+          temperature: 0.9,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 1024,
+        }
       }),
     });
 
@@ -64,24 +77,27 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const aiResponse = data.choices[0].message.content;
+    const aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || "I apologize, I couldn't generate a response.";
 
     // Analyze the user's argument for feedback
-    const analysisResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const analysisResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages: [
+        contents: [
           {
-            role: "system",
-            content: `Analyze this debate argument and provide scores (0-100) for: clarity, argument_strength, confidence. Also count filler words and assess speaking pace. Return ONLY valid JSON: {"clarity": number, "argument_strength": number, "confidence": number, "filler_words": number, "pace": "slow/moderate/fast"}`
-          },
-          { role: "user", content: messages[messages.length - 1].content }
+            role: "user",
+            parts: [{
+              text: `Analyze this debate argument and provide scores (0-100) for: clarity, argument_strength, confidence. Also count filler words and assess speaking pace. Return ONLY valid JSON: {"clarity": number, "argument_strength": number, "confidence": number, "filler_words": number, "pace": "slow/moderate/fast"}\n\nArgument: ${messages[messages.length - 1].content}`
+            }]
+          }
         ],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 256,
+        }
       }),
     });
 
@@ -89,7 +105,8 @@ serve(async (req) => {
     if (analysisResponse.ok) {
       const analysisData = await analysisResponse.json();
       try {
-        analysis = JSON.parse(analysisData.choices[0].message.content);
+        const analysisText = analysisData.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
+        analysis = JSON.parse(analysisText);
       } catch (e) {
         console.error("Failed to parse analysis:", e);
       }
