@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, MessageSquare, Trophy } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, MessageSquare, Trophy, Sparkles, Loader2 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { VoiceDebate } from "@/components/VoiceDebate";
@@ -14,8 +15,10 @@ const Debate = () => {
   const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">("beginner");
   const [debateStarted, setDebateStarted] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
+  const [recommendedTopics, setRecommendedTopics] = useState<string[]>([]);
 
-  const topics = [
+  const defaultTopics = [
     "Technology improves quality of life",
     "Remote work is more productive",
     "AI will replace human jobs",
@@ -24,9 +27,32 @@ const Debate = () => {
     "Free speech should have limits"
   ];
 
+  const getTopicRecommendations = async () => {
+    setIsLoadingRecommendations(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('recommend-topics', {
+        body: { difficulty, context: selectedTopic }
+      });
+
+      if (error) throw error;
+
+      if (data?.topics && Array.isArray(data.topics)) {
+        setRecommendedTopics(data.topics);
+        toast.success("Topic recommendations generated!");
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (error) {
+      console.error("Error getting recommendations:", error);
+      toast.error("Failed to generate topic recommendations");
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  };
+
   const startDebate = async () => {
-    if (!selectedTopic) {
-      toast.error("Please select a topic");
+    if (!selectedTopic || selectedTopic.trim().length === 0) {
+      toast.error("Please enter or select a topic");
       return;
     }
 
@@ -134,19 +160,57 @@ const Debate = () => {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-3">
-                  <label className="text-sm font-medium">Select Topic</label>
-                  <Select value={selectedTopic} onValueChange={setSelectedTopic}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose a debate topic" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {topics.map((topic) => (
-                        <SelectItem key={topic} value={topic}>
+                  <label className="text-sm font-medium">Debate Topic</label>
+                  <Input
+                    placeholder="Type your custom topic or select from suggestions below..."
+                    value={selectedTopic}
+                    onChange={(e) => setSelectedTopic(e.target.value)}
+                    className="text-base"
+                  />
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={getTopicRecommendations}
+                      disabled={isLoadingRecommendations}
+                      className="gap-2"
+                    >
+                      {isLoadingRecommendations ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          Get AI Recommendations
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Display recommended topics or default topics */}
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      {recommendedTopics.length > 0 ? "AI Recommended Topics:" : "Suggested Topics:"}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {(recommendedTopics.length > 0 ? recommendedTopics : defaultTopics).map((topic, index) => (
+                        <Button
+                          key={index}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setSelectedTopic(topic)}
+                          className="text-xs"
+                        >
                           {topic}
-                        </SelectItem>
+                        </Button>
                       ))}
-                    </SelectContent>
-                  </Select>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
