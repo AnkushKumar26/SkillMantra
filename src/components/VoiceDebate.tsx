@@ -98,13 +98,20 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
   };
 
   const handleUserSpeech = async (transcript: string) => {
-    if (!transcript.trim()) return;
+    if (!transcript.trim()) {
+      console.log("Empty transcript, skipping");
+      return;
+    }
 
+    console.log("Processing user speech:", transcript);
     setIsProcessing(true);
     const userMessage: Message = { role: "user", content: transcript };
     setMessages(prev => [...prev, userMessage]);
 
     try {
+      toast.info("Getting AI response...");
+      console.log("Calling debate-ai function...");
+      
       // Get AI response
       const { data, error } = await supabase.functions.invoke('debate-ai', {
         body: {
@@ -114,10 +121,22 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
         }
       });
 
-      if (error) throw error;
+      console.log("debate-ai response:", { data, error });
+
+      if (error) {
+        console.error("Edge function error:", error);
+        throw error;
+      }
+
+      if (!data || !data.response) {
+        console.error("No response data:", data);
+        throw new Error("No response received from AI");
+      }
 
       const aiResponse = data.response;
       const analysisData = data.analysis;
+      
+      console.log("AI response received:", aiResponse.substring(0, 100));
 
       // Update analytics
       const newTurnCount = analytics.turnCount + 1;
@@ -144,7 +163,11 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
       toast.success("AI response ready");
     } catch (error) {
       console.error("Error getting AI response:", error);
-      toast.error("Failed to get AI response. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to get AI response: ${errorMessage}`);
+      
+      // Remove the failed user message
+      setMessages(prev => prev.slice(0, -1));
     } finally {
       setIsProcessing(false);
       setCurrentTranscript("");
