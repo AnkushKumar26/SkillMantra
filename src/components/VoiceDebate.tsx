@@ -135,6 +135,7 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
       // Speak AI response
       setCurrentAiResponse(aiResponse);
       setIsSpeaking(true);
+      toast.info("AI is responding...");
       ttsRef.current?.speak(aiResponse, () => {
         setIsSpeaking(false);
         setCurrentAiResponse("");

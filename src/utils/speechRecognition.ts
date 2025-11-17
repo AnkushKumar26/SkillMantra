@@ -64,12 +64,31 @@ export class TextToSpeechService {
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Resume AudioContext if suspended (required for some browsers)
+    if (this.audioContext.state === 'suspended') {
+      console.log('AudioContext suspended, will resume on first speak');
+    }
   }
 
   async speak(text: string, onEnd?: () => void) {
+    console.log('TTS speak called with text:', text?.substring(0, 50));
+    
     try {
       // Cancel any ongoing speech
       this.stop();
+
+      if (!this.audioContext) {
+        throw new Error('AudioContext not initialized');
+      }
+
+      // Resume AudioContext if suspended (required for Chrome/Safari)
+      if (this.audioContext.state === 'suspended') {
+        console.log('Resuming suspended AudioContext...');
+        await this.audioContext.resume();
+      }
+
+      console.log('Calling ElevenLabs TTS...');
 
       // Call ElevenLabs edge function
       const response = await fetch(
@@ -83,28 +102,42 @@ export class TextToSpeechService {
         }
       );
 
+      console.log('TTS response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to generate speech');
+        const errorText = await response.text();
+        console.error('TTS API error:', errorText);
+        throw new Error(`Failed to generate speech: ${response.status}`);
       }
 
       const { audioContent } = await response.json();
+      console.log('Received audio content, length:', audioContent?.length);
+
+      if (!audioContent) {
+        throw new Error('No audio content received');
+      }
 
       // Decode base64 audio
       const audioData = Uint8Array.from(atob(audioContent), c => c.charCodeAt(0));
-      const audioBuffer = await this.audioContext!.decodeAudioData(audioData.buffer);
+      console.log('Decoded audio data, bytes:', audioData.length);
+
+      const audioBuffer = await this.audioContext.decodeAudioData(audioData.buffer);
+      console.log('Audio buffer decoded, duration:', audioBuffer.duration);
 
       // Play audio
-      const source = this.audioContext!.createBufferSource();
+      const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(this.audioContext!.destination);
+      source.connect(this.audioContext.destination);
       
       source.onended = () => {
+        console.log('Audio playback ended');
         this.currentSource = null;
         if (onEnd) onEnd();
       };
 
       this.currentSource = source;
       source.start(0);
+      console.log('Audio playback started');
     } catch (error) {
       console.error('Text-to-speech error:', error);
       if (onEnd) onEnd();
