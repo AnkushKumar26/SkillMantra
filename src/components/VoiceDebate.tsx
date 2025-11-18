@@ -42,6 +42,7 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
   const speechRecognitionRef = useRef<SpeechRecognitionService | null>(null);
   const ttsRef = useRef<TextToSpeechService | null>(null);
   const timerRef = useRef<number | null>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Initialize TTS
@@ -60,6 +61,13 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
       ttsRef.current?.stop();
     };
   }, []);
+
+  // Auto-scroll transcript to bottom when new messages arrive
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   const startListening = async () => {
     try {
@@ -286,6 +294,48 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
               <div className="text-sm">{currentTranscript}</div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Debate Transcript */}
+      <Card className="border-secondary/20">
+        <CardContent className="p-6">
+          <h3 className="text-lg font-semibold mb-4 text-foreground flex items-center gap-2">
+            <span>💬</span> Live Transcript
+          </h3>
+          <div 
+            ref={transcriptRef}
+            className="h-80 overflow-y-auto space-y-3 p-4 rounded-lg bg-muted/30 border border-border/50 scroll-smooth"
+          >
+            {messages.map((message, index) => (
+              message.role !== "system" && (
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg transition-all ${
+                    message.role === "user"
+                      ? "bg-primary/20 ml-8 border border-primary/30"
+                      : "bg-accent/20 mr-8 border border-accent/30"
+                  }`}
+                >
+                  <p className="text-xs font-bold mb-2 uppercase tracking-wide text-muted-foreground">
+                    {message.role === "user" ? "🗣️ You" : "🤖 AI Opponent"}
+                  </p>
+                  <p className="text-sm leading-relaxed">{message.content}</p>
+                </div>
+              )
+            ))}
+            {isProcessing && (
+              <div className="p-4 rounded-lg bg-accent/20 mr-8 border border-accent/30 flex items-center gap-3">
+                <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                <p className="text-sm text-muted-foreground italic">AI is formulating response...</p>
+              </div>
+            )}
+            {messages.filter(m => m.role !== "system").length === 0 && !isProcessing && (
+              <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                <p>Click "Start Speaking" to begin the debate</p>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
