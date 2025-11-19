@@ -133,11 +133,41 @@ export const VoiceDebate = ({ topic, difficulty, onComplete }: VoiceDebateProps)
 
       if (error) {
         console.error("Edge function error:", error);
+        
+        // Handle specific error codes with user-friendly messages
+        if (error.message?.includes("429") || error.message?.includes("Rate limit")) {
+          toast.error("Rate limit exceeded. Please wait a moment and try again.");
+        } else if (error.message?.includes("402") || error.message?.includes("Payment required")) {
+          toast.error("Credits depleted. Please add credits to your Lovable workspace.");
+        } else if (error.message?.includes("404")) {
+          toast.error("AI service unavailable. Please try again later.");
+        } else if (error.message?.includes("500") || error.message?.includes("503")) {
+          toast.error("AI service error. Please try again in a moment.");
+        } else {
+          toast.error("Failed to get AI response. Please try again.");
+        }
+        
         throw error;
+      }
+
+      // Check for error in the response data
+      if (data?.error) {
+        console.error("AI error in response:", data.error);
+        
+        if (data.error.includes("Rate limit") || data.error.includes("429")) {
+          toast.error("Rate limit exceeded. Please wait a moment and try again.");
+        } else if (data.error.includes("Payment required") || data.error.includes("credits") || data.error.includes("402")) {
+          toast.error("Credits depleted. Please add credits to your Lovable workspace.");
+        } else {
+          toast.error(`AI Error: ${data.error}`);
+        }
+        
+        throw new Error(data.error);
       }
 
       if (!data || !data.response) {
         console.error("No response data:", data);
+        toast.error("No response received from AI. Please try again.");
         throw new Error("No response received from AI");
       }
 
