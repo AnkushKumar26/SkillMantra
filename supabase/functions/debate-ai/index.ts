@@ -112,10 +112,20 @@ serve(async (req) => {
     if (analysisResponse.ok) {
       const analysisData = await analysisResponse.json();
       try {
-        const analysisText = analysisData.choices?.[0]?.message?.content || "{}";
+        let analysisText = analysisData.choices?.[0]?.message?.content || "{}";
+        
+        // Strip markdown code blocks if present
+        analysisText = analysisText.trim();
+        if (analysisText.startsWith("```")) {
+          // Remove opening ```json or ``` and closing ```
+          analysisText = analysisText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+        }
+        
+        console.log("Parsing analysis:", analysisText);
         analysis = JSON.parse(analysisText);
       } catch (e) {
         console.error("Failed to parse analysis:", e);
+        console.error("Raw analysis text:", analysisData.choices?.[0]?.message?.content);
       }
     }
 
