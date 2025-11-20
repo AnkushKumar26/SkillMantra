@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.recommend-topics]
 verify_jwt = false
+
+[functions.interview-ai]
+verify_jwt = false

@@ -2,26 +2,29 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Video, Play, Pause } from "lucide-react";
+import { ArrowLeft, Video } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { VoiceInterview } from "@/components/VoiceInterview";
+import { InterviewReport } from "@/components/InterviewReport";
+
+interface InterviewAnalytics {
+  clarity: number;
+  confidence: number;
+  pace: string;
+  fillerWords: number;
+  eyeContact: number;
+  posture: number;
+  overall: number;
+}
 
 const Interview = () => {
   const [industry, setIndustry] = useState("");
   const [role, setRole] = useState("");
   const [started, setStarted] = useState(false);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answer, setAnswer] = useState("");
-  const [recording, setRecording] = useState(false);
-
-  const questions = [
-    "Tell me about yourself and your background.",
-    "What are your greatest strengths?",
-    "Describe a challenging situation you faced and how you handled it.",
-    "Where do you see yourself in 5 years?",
-    "Why are you interested in this role?"
-  ];
+  const [completed, setCompleted] = useState(false);
+  const [analytics, setAnalytics] = useState<InterviewAnalytics | null>(null);
+  const [duration, setDuration] = useState(0);
 
   const startInterview = () => {
     if (!industry || !role) {
@@ -29,21 +32,22 @@ const Interview = () => {
       return;
     }
     setStarted(true);
-    toast.success("Interview started! Take your time to answer each question.");
+    toast.success("Interview started! The AI will ask you questions.");
   };
 
-  const handleNext = () => {
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion(currentQuestion + 1);
-      setAnswer("");
-    } else {
-      toast.success("Interview complete! Review your performance below.");
-    }
+  const handleInterviewComplete = (finalAnalytics: InterviewAnalytics, interviewDuration: number) => {
+    setAnalytics(finalAnalytics);
+    setDuration(interviewDuration);
+    setCompleted(true);
   };
 
-  const toggleRecording = () => {
-    setRecording(!recording);
-    toast.info(recording ? "Recording stopped" : "Recording started");
+  const restartInterview = () => {
+    setIndustry("");
+    setRole("");
+    setStarted(false);
+    setCompleted(false);
+    setAnalytics(null);
+    setDuration(0);
   };
 
   return (
@@ -60,8 +64,22 @@ const Interview = () => {
         </div>
       </nav>
 
-      <main className="container mx-auto px-4 py-8 max-w-4xl">
-        {!started ? (
+      <main className="container mx-auto px-4 py-8 max-w-6xl">
+        {completed && analytics ? (
+          <InterviewReport
+            analytics={analytics}
+            industry={industry}
+            role={role}
+            duration={duration}
+            onRestart={restartInterview}
+          />
+        ) : started ? (
+          <VoiceInterview
+            industry={industry}
+            role={role}
+            onComplete={handleInterviewComplete}
+          />
+        ) : (
           <div className="space-y-6">
             <Card>
               <CardHeader>
@@ -120,82 +138,6 @@ const Interview = () => {
                 <p>• Maintain eye contact with the camera</p>
                 <p>• Speak at a moderate pace</p>
                 <p>• You can record your responses for self-review</p>
-              </CardContent>
-            </Card>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Question {currentQuestion + 1} of {questions.length}</CardTitle>
-                    <CardDescription>Take your time to formulate your answer</CardDescription>
-                  </div>
-                  <Button
-                    variant={recording ? "destructive" : "default"}
-                    size="icon"
-                    onClick={toggleRecording}
-                  >
-                    {recording ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-6 bg-primary/5 rounded-lg border border-primary/20">
-                  <p className="text-lg font-medium">{questions[currentQuestion]}</p>
-                </div>
-
-                <Textarea
-                  value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="Type your answer here or use voice recording..."
-                  rows={8}
-                />
-
-                <div className="flex gap-3">
-                  {currentQuestion < questions.length - 1 ? (
-                    <Button 
-                      onClick={handleNext}
-                      className="bg-gradient-to-r from-primary to-accent"
-                    >
-                      Next Question →
-                    </Button>
-                  ) : (
-                    <Button 
-                      onClick={handleNext}
-                      className="bg-gradient-to-r from-primary to-accent"
-                    >
-                      Finish Interview
-                    </Button>
-                  )}
-                  {currentQuestion > 0 && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => setCurrentQuestion(currentQuestion - 1)}
-                    >
-                      ← Previous
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border-accent/20">
-              <CardHeader>
-                <CardTitle className="text-sm text-muted-foreground">Progress</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  {questions.map((_, index) => (
-                    <div
-                      key={index}
-                      className={`h-2 flex-1 rounded-full ${
-                        index <= currentQuestion ? "bg-primary" : "bg-muted"
-                      }`}
-                    />
-                  ))}
-                </div>
               </CardContent>
             </Card>
           </div>
