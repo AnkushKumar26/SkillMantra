@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Mic, MicOff, Video } from "lucide-react";
+import { Mic, MicOff } from "lucide-react";
 import { SpeechRecognitionService, TextToSpeechService } from "@/utils/speechRecognition";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { RobotAvatar } from "./RobotAvatar";
+import { PoseDetectionCamera } from "./PoseDetectionCamera";
 
 interface Message {
   role: "user" | "assistant";
@@ -49,9 +50,8 @@ export const VoiceInterview = ({ industry, role, onComplete }: VoiceInterviewPro
 
   const speechRecognition = useRef<SpeechRecognitionService | null>(null);
   const textToSpeech = useRef<TextToSpeechService | null>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
   const startTimeRef = useRef<number>(Date.now());
+  const [postureScore, setPostureScore] = useState(75);
 
   useEffect(() => {
     textToSpeech.current = new TextToSpeechService();
@@ -67,8 +67,6 @@ export const VoiceInterview = ({ industry, role, onComplete }: VoiceInterviewPro
 
     // Start webcam
     startWebcam();
-
-    // Start interview with first question
     askFirstQuestion();
 
     // Timer
@@ -84,27 +82,11 @@ export const VoiceInterview = ({ industry, role, onComplete }: VoiceInterviewPro
       if (textToSpeech.current) {
         textToSpeech.current.stop();
       }
-      stopWebcam();
     };
   }, []);
 
-  const startWebcam = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-    } catch (error) {
-      console.error("Error accessing webcam:", error);
-      toast.error("Could not access webcam");
-    }
-  };
-
-  const stopWebcam = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
-    }
+  const startWebcam = () => {
+    // Webcam is now handled by PoseDetectionCamera component
   };
 
   const askFirstQuestion = async () => {
@@ -230,7 +212,7 @@ export const VoiceInterview = ({ industry, role, onComplete }: VoiceInterviewPro
           pace: data.evaluation.pace || prev.pace,
           fillerWords: prev.fillerWords + (data.evaluation.filler_words || 0),
           eyeContact: Math.round((prev.eyeContact + (data.evaluation.eye_contact || 75)) / 2),
-          posture: Math.round((prev.posture + (data.evaluation.posture || 75)) / 2),
+          posture: postureScore,
           overall: Math.round((prev.overall + data.evaluation.overall) / 2),
         }));
       }
@@ -277,9 +259,8 @@ export const VoiceInterview = ({ industry, role, onComplete }: VoiceInterviewPro
   const endInterview = () => {
     stopListening();
     stopSpeaking();
-    stopWebcam();
     const duration = Math.floor((Date.now() - startTimeRef.current) / 1000);
-    const finalAnalytics = { ...analytics, overall: Math.round((analytics.clarity + analytics.confidence + analytics.eyeContact + analytics.posture) / 4) };
+    const finalAnalytics = { ...analytics, overall: Math.round((analytics.clarity + analytics.confidence + analytics.eyeContact + postureScore) / 4) };
     onComplete(finalAnalytics, duration);
   };
 
@@ -291,127 +272,116 @@ export const VoiceInterview = ({ industry, role, onComplete }: VoiceInterviewPro
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Webcam Feed */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Video className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold">Your Camera</h3>
+    <>
+      {/* Pose Detection Camera - Fixed Top Right */}
+      <PoseDetectionCamera
+        onPostureChange={(score, issues) => {
+          setPostureScore(score);
+        }}
+      />
+
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="p-6">
+            <div className="space-y-6">
+              {/* AI Interviewer */}
+              <div className="space-y-4">
+                <h3 className="font-semibold mb-2">AI Interviewer</h3>
+                <RobotAvatar state={getRobotState()} currentText={aiResponse} />
+                
+                <div className="text-center space-y-2">
+                  <div className="text-sm text-muted-foreground">Question {questionNumber + 1}</div>
+                  <div className="text-2xl font-bold text-primary">{formatTime(timer)}</div>
+                </div>
               </div>
-              <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover mirror"
-                />
+
+            {/* Stats Display */}
+            <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Clarity</div>
+                <div className="text-2xl font-bold text-primary">{analytics.clarity}%</div>
               </div>
-              <div className="text-sm text-muted-foreground text-center">
-                Keep good eye contact and maintain proper posture
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Confidence</div>
+                <div className="text-2xl font-bold text-primary">{analytics.confidence}%</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Filler Words</div>
+                <div className="text-2xl font-bold text-primary">{analytics.fillerWords}</div>
+              </div>
+              <div className="bg-muted/50 rounded-lg p-3">
+                <div className="text-sm text-muted-foreground">Posture</div>
+                <div className="text-2xl font-bold text-primary">{postureScore}%</div>
               </div>
             </div>
 
-            {/* AI Interviewer */}
-            <div className="space-y-4">
-              <h3 className="font-semibold mb-2">AI Interviewer</h3>
-              <RobotAvatar state={getRobotState()} currentText={aiResponse} />
-              
-              <div className="text-center space-y-2">
-                <div className="text-sm text-muted-foreground">Question {questionNumber + 1}</div>
-                <div className="text-2xl font-bold text-primary">{formatTime(timer)}</div>
+            {/* Controls */}
+            <div className="mt-6 flex flex-col items-center gap-4">
+              {currentTranscript && (
+                <div className="w-full p-4 bg-muted/50 rounded-lg text-center">
+                  <p className="text-sm text-muted-foreground mb-1">You said:</p>
+                  <p className="font-medium">{currentTranscript}</p>
+                </div>
+              )}
+
+              <div className="flex gap-4">
+                {!isListening && !isSpeaking && !isProcessing && (
+                  <Button onClick={startListening} size="lg" className="gap-2">
+                    <Mic className="w-5 h-5" />
+                    Start Speaking
+                  </Button>
+                )}
+
+                {isListening && (
+                  <Button onClick={stopListening} size="lg" variant="destructive" className="gap-2">
+                    <MicOff className="w-5 h-5" />
+                    Stop Speaking
+                  </Button>
+                )}
+
+                {isSpeaking && (
+                  <Button onClick={stopSpeaking} size="lg" variant="secondary">
+                    Skip Question
+                  </Button>
+                )}
+
+                {isProcessing && (
+                  <Button disabled size="lg">
+                    Processing...
+                  </Button>
+                )}
               </div>
-            </div>
-          </div>
 
-          {/* Stats Display */}
-          <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="text-sm text-muted-foreground">Clarity</div>
-              <div className="text-2xl font-bold text-primary">{analytics.clarity}%</div>
+              <Button onClick={endInterview} variant="outline" size="sm">
+                End Interview
+              </Button>
             </div>
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="text-sm text-muted-foreground">Confidence</div>
-              <div className="text-2xl font-bold text-primary">{analytics.confidence}%</div>
-            </div>
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="text-sm text-muted-foreground">Filler Words</div>
-              <div className="text-2xl font-bold text-primary">{analytics.fillerWords}</div>
-            </div>
-            <div className="bg-muted/50 rounded-lg p-3">
-              <div className="text-sm text-muted-foreground">Overall</div>
-              <div className="text-2xl font-bold text-primary">{analytics.overall}%</div>
-            </div>
-          </div>
 
-          {/* Controls */}
-          <div className="mt-6 flex flex-col items-center gap-4">
-            {currentTranscript && (
-              <div className="w-full p-4 bg-muted/50 rounded-lg text-center">
-                <p className="text-sm text-muted-foreground mb-1">You said:</p>
-                <p className="font-medium">{currentTranscript}</p>
+            {/* Transcript */}
+            {messages.length > 0 && (
+              <div className="mt-6 space-y-2 max-h-64 overflow-y-auto">
+                <h4 className="font-semibold text-sm">Interview Transcript</h4>
+                {messages.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`p-3 rounded-lg ${
+                      msg.role === "user"
+                        ? "bg-primary/10 ml-8"
+                        : "bg-muted/50 mr-8"
+                    }`}
+                  >
+                    <div className="text-xs text-muted-foreground mb-1">
+                      {msg.role === "user" ? "You" : "AI Interviewer"}
+                    </div>
+                    <div className="text-sm">{msg.content}</div>
+                  </div>
+                ))}
               </div>
             )}
-
-            <div className="flex gap-4">
-              {!isListening && !isSpeaking && !isProcessing && (
-                <Button onClick={startListening} size="lg" className="gap-2">
-                  <Mic className="w-5 h-5" />
-                  Start Speaking
-                </Button>
-              )}
-
-              {isListening && (
-                <Button onClick={stopListening} size="lg" variant="destructive" className="gap-2">
-                  <MicOff className="w-5 h-5" />
-                  Stop Speaking
-                </Button>
-              )}
-
-              {isSpeaking && (
-                <Button onClick={stopSpeaking} size="lg" variant="secondary">
-                  Skip Question
-                </Button>
-              )}
-
-              {isProcessing && (
-                <Button disabled size="lg">
-                  Processing...
-                </Button>
-              )}
             </div>
-
-            <Button onClick={endInterview} variant="outline" size="sm">
-              End Interview
-            </Button>
-          </div>
-
-          {/* Transcript */}
-          {messages.length > 0 && (
-            <div className="mt-6 space-y-2 max-h-64 overflow-y-auto">
-              <h4 className="font-semibold text-sm">Interview Transcript</h4>
-              {messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg ${
-                    msg.role === "user"
-                      ? "bg-primary/10 ml-8"
-                      : "bg-muted/50 mr-8"
-                  }`}
-                >
-                  <div className="text-xs text-muted-foreground mb-1">
-                    {msg.role === "user" ? "You" : "AI Interviewer"}
-                  </div>
-                  <div className="text-sm">{msg.content}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+          </CardContent>
+        </Card>
+      </div>
+    </>
   );
 };
